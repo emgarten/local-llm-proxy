@@ -31,19 +31,23 @@ def _pretty(data: bytes) -> str:
     return json.dumps(obj, indent=2, ensure_ascii=False)
 
 
-app = FastAPI(title="OpenAI Chat Proxy", version="1.0.0")
+app = FastAPI(title="LLM Proxy", version="1.0.0")
 
-_model_map: Dict[str, ProviderCfg] = {}
+_provider_map: Dict[str, ProviderCfg] = {}
 _forwarder: Forwarder | None = None
 
 
 @app.on_event("startup")
 async def _startup() -> None:
-    global _model_map, _forwarder  # noqa: PLW0603
+    global _provider_map, _forwarder  # noqa: PLW0603
 
     config_path = Path.home() / ".local_llm_proxy" / "config.yaml"
-    _model_map = load_config(config_path).providers
-    _forwarder = Forwarder(_model_map)
+    _provider_map = load_config(config_path).providers
+    _forwarder = Forwarder(_provider_map)
+
+    logger.info("Available providers:")
+    for name, cfg in _provider_map.items():
+        logger.info(f"  - {name}")
 
 
 @app.on_event("shutdown")
@@ -52,30 +56,31 @@ async def _shutdown() -> None:
         await _forwarder.aclose()
 
 
-@app.post("/{model}/chat/completions")
-async def chat_proxy(model: str, request: Request) -> Response:
-    if model not in _model_map:
+@app.post("/provider/{provider}/chat/completions")
+async def chat_proxy(provider: str, request: Request) -> Response:
+    if provider not in _provider_map:
         return Response(
-            content='{"error": "Unknown model"}',
+            content='{"error": "Unknown provider"}',
             media_type="application/json",
             status_code=status.HTTP_404_NOT_FOUND,
         )
 
-    cfg = _model_map[model]
-    token = cfg.token_provider.get_token()
-
+    cfg = _provider_map[provider]
     endpoint = str(cfg.endpoint)
 
     out_headers = {}
     out_headers["Content-Type"] = "application/json"
-    out_headers["Authorization"] = f"Bearer {token}"
+
+    token = cfg.token_provider.get_token()
+    if token:
+        out_headers["Authorization"] = f"Bearer {token}"
 
     body_bytes = await request.body()
     if body_bytes:
         try:
             # Override the model to match the config
             body_json = json.loads(body_bytes.decode("utf-8"))
-            body_json["model"] = model
+            body_json["model"] = cfg.model
             body = json.dumps(body_json).encode("utf-8")
         except json.JSONDecodeError:
             body = body_bytes

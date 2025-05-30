@@ -78,7 +78,7 @@ def test_chat_proxy_upstream_error(monkeypatch: pytest.MonkeyPatch, create_confi
 
     with TestClient(proxy_app.app) as client:
         resp = client.post(
-            "/test-model/chat/completions",
+            "/provider/test-model/chat/completions",
             json={"messages": [{"role": "user", "content": "hi"}]},
         )
         assert resp.status_code == 502
@@ -102,7 +102,7 @@ def test_chat_proxy_azcli(monkeypatch: pytest.MonkeyPatch, create_config_azcli: 
 
     with TestClient(proxy_app.app) as client:
         resp = client.post(
-            "/test-model/chat/completions",
+            "/provider/test-model/chat/completions",
             json={"messages": [{"role": "user", "content": "hi"}]},
         )
         assert resp.status_code == 200
