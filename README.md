@@ -21,6 +21,7 @@ providers:
     auth:
       type: apikey
       envKey: AZURE_OPENAI_API_KEY
+    transform: ".messages as $m | .inputs=$m | del(.messages)"
   azure-o4-mini-key:
     endpoint: "https://{service}.cognitiveservices.azure.com/openai/deployments/o4-mini/chat/completions?api-version=2025-01-01-preview"
     model: o4-mini
@@ -33,6 +34,11 @@ providers:
     auth:
       type: azure
 ```
+
+The optional `transform` field contains a [jq](https://stedolan.github.io/jq/) expression that
+modifies the JSON body of outgoing requests. The transform runs only when the incoming body
+is valid JSON. In the example above, the `messages` field is renamed to `inputs` while the
+rest of the body is left unchanged.
 
 ### Running prompt-passage
 

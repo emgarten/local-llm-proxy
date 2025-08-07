@@ -101,6 +101,23 @@ def test_parse_config_apikey_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(auth.provider, ApiKeyProvider)
 
 
+def test_parse_config_transform() -> None:
+    raw = {
+        "providers": {
+            "p1": {
+                "endpoint": "https://example.com",
+                "model": "m",
+                "auth": {"type": "apikey", "key": "k"},
+                "transform": ".messages as $m | .inputs=$m | del(.messages)",
+            }
+        }
+    }
+    cfg = parse_config(raw)
+    prov = cfg.providers["p1"]
+    transformed = prov.apply_transform({"model": "m", "messages": [1]})
+    assert "inputs" in transformed and "messages" not in transformed
+
+
 def test_parse_config_service_section() -> None:
     raw = {
         "service": {"port": 1234, "auth": {"type": "apikey", "key": "tok"}},

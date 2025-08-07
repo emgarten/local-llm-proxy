@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Dict, Literal, Any
+from typing import Dict, Literal, Any, cast
 
 import yaml
 from pydantic import (
@@ -22,6 +22,7 @@ from pydantic import (
 )
 
 from .auth_providers import ApiKeyProvider, AzureCliProvider, TokenProvider
+import jq
 
 
 def default_config_path() -> Path:
@@ -100,17 +101,26 @@ class ProviderCfg(BaseModel):
     endpoint: str  # Endpoint URL, potentially with placeholders like {service}
     model: str  # Name of the LLM model, e.g., "o4-mini"
     auth: AuthConfig
+    transform: str | None = None
     _provider: TokenProvider | None = PrivateAttr(None)
+    _transform_prog: jq.Program | None = PrivateAttr(None)
 
     @model_validator(mode="after")
     def _init_provider(self) -> "ProviderCfg":
         self._provider = self.auth.provider
+        if self.transform is not None:
+            self._transform_prog = jq.compile(self.transform)
         return self
 
     @property
     def token_provider(self) -> TokenProvider:
         assert self._provider is not None
         return self._provider
+
+    def apply_transform(self, body: dict[str, Any]) -> dict[str, Any]:
+        if self._transform_prog is None:
+            return body
+        return cast(dict[str, Any], self._transform_prog.input(body).first())
 
 
 class DefaultsCfg(BaseModel):

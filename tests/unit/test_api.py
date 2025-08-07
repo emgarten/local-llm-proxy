@@ -2,6 +2,7 @@ from pathlib import Path
 import importlib
 import typing
 import httpx
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -72,6 +73,26 @@ def create_config_service_auth(tmp_path: Path) -> Path:
                 },
             }
         },
+    }
+    cfg_file.write_text(yaml.dump(cfg_data))
+    return cfg_file
+
+
+@pytest.fixture()
+def create_config_transform(tmp_path: Path) -> Path:
+    cfg_file = tmp_path / ".prompt-passage.yaml"
+    cfg_data = {
+        "providers": {
+            "test-transform": {
+                "endpoint": "https://mock.upstream/chat/completions",
+                "model": "remote-model",
+                "transform": ".messages as $m | .inputs=$m | del(.messages)",
+                "auth": {
+                    "type": "apikey",
+                    "envKey": "TEST_API_KEY_ENV",
+                },
+            }
+        }
     }
     cfg_file.write_text(yaml.dump(cfg_data))
     return cfg_file
@@ -168,6 +189,33 @@ def test_chat_proxy_stream(monkeypatch: pytest.MonkeyPatch, create_config: Path,
             chunks = list(resp.iter_bytes())
 
     assert b"data: {" in chunks[0]
+
+
+def test_chat_proxy_transform(
+    monkeypatch: pytest.MonkeyPatch, create_config_transform: Path, httpx_mock: HTTPXMock
+) -> None:
+    monkeypatch.setenv("HOME", str(create_config_transform.parent))
+    monkeypatch.setenv("TEST_API_KEY_ENV", "tok")
+    import sys
+
+    sys.modules.pop("prompt_passage.proxy_app", None)
+    proxy_app = importlib.import_module("prompt_passage.proxy_app")
+    httpx_mock.add_response(url="https://mock.upstream/chat/completions", json={"ok": True})
+
+    with TestClient(proxy_app.app) as client:
+        resp = client.post(
+            "/provider/test-transform/chat/completions",
+            json={"messages": [{"role": "user", "content": "hi"}]},
+        )
+        assert resp.status_code == 200
+
+    req = httpx_mock.get_requests()[0]
+    data = json.loads(req.content.decode("utf-8"))
+    assert data == {
+        "model": "remote-model",
+        "inputs": [{"role": "user", "content": "hi"}],
+    }
+    sys.modules.pop("prompt_passage.proxy_app", None)
 
 
 def test_chat_proxy_unknown_provider(monkeypatch: pytest.MonkeyPatch, create_config: Path) -> None:

@@ -114,6 +114,8 @@ async def chat_proxy(provider: str, request: Request) -> Response:
             body_json = json.loads(body_bytes.decode("utf-8"))
             body_json["model"] = cfg.model
             stream = bool(body_json.get("stream", False))
+            if cfg.transform is not None:
+                body_json = cfg.apply_transform(body_json)
             body = json.dumps(body_json).encode("utf-8")
         except json.JSONDecodeError:
             body = body_bytes
